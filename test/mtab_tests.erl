@@ -1,5 +1,4 @@
 -module(mtab_tests).
-
 -include_lib("eunit/include/eunit.hrl").
 
 tab1() ->
@@ -38,7 +37,8 @@ simple_test() ->
 +-------------+-----+
 ",
         fmt(tab1(),
-            #{header_fmt => titlecase,
+            #{header => first_row,
+              header_fmt => titlecase,
               style => ascii,
               cols => #{align => center}})).
 
@@ -51,7 +51,8 @@ sparse_list_test() ->
 30
 ",
         fmt(tab3(),
-            #{header_fmt => titlecase})).
+            #{header => first_row,
+              header_fmt => titlecase})).
 
 sparse_list_no_trim_test() ->
     ?assertEqual(
@@ -62,7 +63,8 @@ sparse_list_no_trim_test() ->
 30\s\s\s\s\s\s\s\s\s\s
 ",
         fmt(tab3(),
-            #{header_fmt => titlecase,
+            #{header => first_row,
+              header_fmt => titlecase,
               no_trim => true})).
 
 sparse_map_test() ->

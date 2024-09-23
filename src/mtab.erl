@@ -9,7 +9,7 @@
 %%% When the rows are maps, the header is by default the map keys.
 
 -type col() :: #{
-                  format_fun => fun() % FIXME type
+                 format_fun => fun() % FIXME type
                 , align => left | right | center % left is default
                 , width => pos_integer() % default is dynamically calculated
                 }.

@@ -3,10 +3,11 @@
 
 %%% Pretty-prints a list of rows as a table.
 %%%
-%%% An row can be a list of values, a tuple of values, or
-%%% a map of values.
+%%% An row can be a list of values, a tuple of values,
+%%% a map of values, or a proplist.
 %%%
-%%% When the rows are maps, the header is by default the map keys.
+%%% When the rows are maps, the header is by default the map keys in
+%%% the first row.
 
 -type col() :: #{
                  format_fun => fun() % FIXME type
@@ -14,14 +15,19 @@
                 , width => pos_integer() % default is dynamically calculated
                 }.
 
--type style() :: plain | simple | pretty | simple_pretty | prest | ascii |
+-type style() :: plain | simple | pretty | simple_pretty | presto | ascii |
                  grid | simple_grid.
 
--spec format(Data :: list(list(unicode:chardata())
-                         | #{atom() | unicode:chardata() => unicode:chardata()}
-                         | list({atom(), unicode:chardata()})),
+-type key() :: atom() | unicode:chardata().
+
+-spec format(Data :: [ [unicode:chardata()]
+                     | {unicode:chardata()}
+                     | #{key() => unicode:chardata()}
+                     | [{key(), unicode:chardata()}] ],
              Opts :: #{
-                       header => none | first_row
+                       header => first_row % default
+                               | [key()]
+                               | none
                       , header_fmt => lowercase | uppercase | titlecase
                       , cols => col() | [col()]
                       , style => style() | map()
@@ -44,15 +50,15 @@ format(Data, Opts) ->
 
 -record(sep, {
               left = []
-              , col_sep = []
-              , right = []
-              , fill = " "
+             , col_sep = []
+             , right = []
+             , fill = " "
              }).
 
 -record(row, {
               left = []
-              , col_sep = " "
-              , right = []
+             , col_sep = " "
+             , right = []
              }).
 
 -record(style, {
@@ -67,38 +73,53 @@ format(Data, Opts) ->
 
 -record(cell, {
                text :: iodata()
-              , width :: pos_integer()  % calculated width of text
+              , width :: non_neg_integer()  % calculated width of text
               }).
-
-mk_header(Data, #{header := none}) ->
-    {undefined, Data};
-mk_header([H | _] = Data, #{header := Keys} = Opts)
-  when is_map(H), is_list(Keys) ->
-    {mk_header_row([to_chardata(Key) || Key <- Keys], Opts),
-     maps_to_items(Data, Keys)};
 mk_header([H | _] = Data, Opts) when is_map(H) ->
-    Keys = maps:keys(H),
-    {mk_header_row([to_chardata(Key) || Key <- Keys], Opts),
+    {DoHeader, Keys} =
+        case maps:get(header, Opts, first_row) of
+            first_row ->
+                {true, maps:keys(H)};
+            Keys0 when is_list(Keys0) ->
+                {true, Keys0};
+            none ->
+                {false, maps:keys(H)}
+        end,
+    {mk_header_row(DoHeader, [to_chardata(Key) || Key <- Keys], Opts),
      maps_to_items(Data, Keys)};
 mk_header([[{_, _} | _] = H | _] = Data, Opts) -> % proplist
-    {mk_header_row([to_chardata(Key) || {Key, _Val} <- H], Opts),
-     proplists_to_items(Data)};
-mk_header([H | T], #{header := first_row} = Opts) ->
-    {mk_header_row(H, Opts), T};
-mk_header(Data, _) ->
-    {undefined, Data}.
-
+    {DoHeader, Keys} =
+        case maps:get(header, Opts, first_row) of
+            first_row ->
+                {true, [Key || {Key, _Value} <- H]};
+            Keys0 when is_list(Keys0) ->
+                {true, Keys0};
+            none ->
+                {false, [Key || {Key, _Value} <- H]}
+        end,
+    {mk_header_row(DoHeader, [to_chardata(Key) || Key <- Keys], Opts),
+     maps_to_items([maps:from_list(X) || X <- Data], Keys)};
+mk_header([H | T], Opts) ->
+    {DoHeader, Keys} =
+        case maps:get(header, Opts, first_row) of
+            first_row ->
+                {true, H};
+            Keys0 when is_list(Keys0) ->
+                {true, Keys0};
+            none ->
+                {false, H}
+        end,
+    {mk_header_row(DoHeader, Keys, Opts),
+     T}.
 
 to_chardata(X) when is_atom(X) -> atom_to_binary(X);
 to_chardata(X) -> X.
 
-mk_header_row(Line, Opts) ->
+mk_header_row(true, Line, Opts) ->
     Row = mk_row(Line),
-    [fmt_cells(Cells, maps:get(header_fmt, Opts, default)) || Cells <- Row].
-
-%% FIXME: assumes all proplists have exactly the same members...
-proplists_to_items(Data) ->
-    [[Val || {_Key, Val} <- Proplist] || Proplist <- Data].
+    [fmt_cells(Cells, maps:get(header_fmt, Opts, default)) || Cells <- Row];
+mk_header_row(false, _, _) ->
+    undefined.
 
 maps_to_items(Data, Keys) ->
     [lists:map(fun(Key) -> maps:get(Key, Map, <<"">>) end, Keys) ||

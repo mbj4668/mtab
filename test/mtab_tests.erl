@@ -8,15 +8,26 @@ tab1() ->
      ["fatty bacon", "0"]].
 
 tab2() ->
-    [#{foo => 42, bar => "hej", baz => 99},
+    [#{foo => 42, bar => "hej", <<"baz">> => 99},
      #{bar => "hopp"},
-     #{foo => 44, baz => 100}].
+     #{foo => 44, <<"baz">> => 100}].
 
 tab3() ->
     [["hej", "hopp", "foo"],
      [10, 20, 30],
      [10, 20],
      [30]].
+
+tab4() ->
+    [[{"foo", 42}, {bar, "hej"}, {baz, 99}],
+     [{bar, "hopp"}],
+     [{"foo", 44}, {baz, 100}]].
+
+tab5() ->
+    [{"Item\nname", "Qty"},
+     {"spam", "42"},
+     {"white\neggs", "451"},
+     {"fatty bacon", "0"}].
 
 
 fmt(Data, Opts) ->
@@ -37,6 +48,26 @@ simple_test() ->
 +-------------+-----+
 ",
         fmt(tab1(),
+            #{header => first_row,
+              header_fmt => titlecase,
+              style => ascii,
+              cols => #{align => center}})).
+
+simple_tuple_test() ->
+    ?assertEqual(
+"+-------------+-----+
+|    Item     | Qty |
+|    Name     |     |
++-------------+-----+
+|    spam     | 42  |
++-------------+-----+
+|    white    | 451 |
+|    eggs     |     |
++-------------+-----+
+| fatty bacon |  0  |
++-------------+-----+
+",
+        fmt(tab5(),
             #{header => first_row,
               header_fmt => titlecase,
               style => ascii,
@@ -77,7 +108,20 @@ sparse_map_test() ->
 ",
         fmt(tab2(),
             #{header_fmt => titlecase,
-              header => [bar, baz, foo],
+              header => [bar, <<"baz">>, foo],
+              style => presto})).
+
+sparse_proplist_test() ->
+    ?assertEqual(
+" Bar  | Baz | Foo
+------+-----+-----
+ hej  | 99  | 42
+ hopp |     |
+      | 100 | 44
+",
+        fmt(tab4(),
+            #{header_fmt => titlecase,
+              header => [bar, baz, "foo"],
               style => presto})).
 
 

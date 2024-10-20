@@ -14,6 +14,9 @@
                 , width => pos_integer() % default is dynamically calculated
                 }.
 
+-type style() :: plain | simple | pretty | simple_pretty | prest | ascii |
+                 grid | simple_grid.
+
 -spec format(Data :: list(list(unicode:chardata())
                          | #{atom() | unicode:chardata() => unicode:chardata()}
                          | list({atom(), unicode:chardata()})),
@@ -21,7 +24,7 @@
                        header => none | first_row
                       , header_fmt => lowercase | uppercase | titlecase
                       , cols => col() | [col()]
-                      , style => plain | simple | pretty
+                      , style => style() | map()
                       , fmt_fun => fun((term()) -> unicode:chardata())
                       }) -> iodata().
 format(Data) ->
@@ -266,8 +269,9 @@ style(pretty) -> pretty();
 style(simple_pretty) -> simple_pretty();
 style(presto) -> presto();
 style(ascii) -> ascii();
+style(grid) -> grid();
 style(simple_grid) -> simple_grid();
-style(grid) -> grid().
+style(M) when is_map(M) -> mk_style(M).
 
 plain() ->
     #style{}.
@@ -333,3 +337,28 @@ ascii() ->
       , row_sep = #sep{left = "+", right = "+", col_sep = "+", fill = "-"}
       , last_line = #sep{left = "+", right = "+", col_sep = "+", fill = "-"}
       }.
+
+mk_style(M) ->
+    #style{spacer = maps:get(spacer, M, undefined),
+           first_line = mk_sep0(maps:get(first_line, M, undefined)),
+           header = mk_row0(maps:get(header, M, undefined)),
+           header_sep = mk_sep0(maps:get(header_sep, M, undefined)),
+           row = mk_row0(maps:get(row, M, undefined)),
+           row_sep = mk_sep0(maps:get(row_sep, M, undefined)),
+           last_line = mk_sep0(maps:get(last_line, M, undefined))
+      }.
+
+mk_sep0(undefined) ->
+    undefined;
+mk_sep0(M) ->
+    #sep{left = maps:get(left, M, undefined),
+         right = maps:get(right, M, undefined),
+         col_sep = maps:get(col_sep, M, undefined),
+         fill = maps:get(fill, M, undefined)}.
+
+mk_row0(undefined) ->
+    undefined;
+mk_row0(M) ->
+    #row{left = maps:get(left, M, undefined),
+         right = maps:get(right, M, undefined),
+         col_sep = maps:get(col_sep, M, undefined)}.

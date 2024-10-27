@@ -6,12 +6,13 @@
 %%% An row can be a list of values, a tuple of values,
 %%% a map of values, or a proplist.
 %%%
-%%% When the rows are maps, the header is by default the map keys in
-%%% the first row.
+%%% By default, the header is taken from the first row.  If the rows
+%%% are lists or tuples, the first row is the header. If the the rows
+%%% are maps or proplists, the header is the keys of the row.
 
 -type col() :: #{
-                 format_fun => fun() % FIXME type
-                , align => left | right | center % left is default
+                  align => left | right | center % left is default
+                 %% NOTE: width of text, the style may add additional spaces
                 , width => pos_integer() % default is dynamically calculated
                 }.
 
@@ -20,19 +21,57 @@
 
 -type key() :: atom() | unicode:chardata().
 
+-type custom_style() ::
+        #{
+          %% padding before and after the text in a cell
+          spacer => iodata()
+          %% format of the first line above the header
+         , first_line => custom_sep()
+          %% format of the header
+         , header := custom_row()
+          %% format of line directly below the
+         , header_sep => custom_sep()
+          %% format of each row
+         , row := custom_row()
+          %% format of line between rows
+         , row_sep => custom_sep()
+          %% format of the last line after the lat row
+         , last_line => custom_sep()
+         }.
+
+-type custom_sep() ::
+        #{
+          %% leftmost character
+          left => unicode:chardata()
+          %% rightmost character
+         , right => unicode:chardata()
+          %% separator character between columns
+         , col_sep => unicode:chardata()
+          %% fill character, multiplied according to cell width
+         , fill => unicode:chardata()
+         }.
+
+-type custom_row() ::
+        #{
+          %% leftmost character of a row
+          left => unicode:chardata()
+          %% rightmost character of a row
+         , right => unicode:chardata()
+          %% separator character between each cell
+         , col_sep => unicode:chardata()
+         }.
+
 -spec format(Data :: [ [unicode:chardata()]
                      | {unicode:chardata()}
                      | #{key() => unicode:chardata()}
-                     | [{key(), unicode:chardata()}] ],
+                     | [{key(), unicode:chardata()}]],
              Opts :: #{
-                       header => first_row % default
-                               | [key()]
-                               | none
+                       header => first_row | [key()] | none
                       , header_fmt => lowercase | uppercase | titlecase
                       , cols => col() | [col()]
-                      , style => style() | map()
-                      , fmt_fun => fun((term()) -> unicode:chardata())
-                      }) -> iodata().
+                      , style => style() | custom_style()
+                      }
+            ) -> iodata().
 format(Data) ->
     format(Data, #{}).
 format(Data, Opts) ->
@@ -42,27 +81,26 @@ format(Data, Opts) ->
     AllRows = if Header /= undefined -> [Header | Rows];
                  true -> Rows
               end,
-    Cols = [C#{width => maps:get(width, C)} ||
-               C <- mk_cols(AllRows, maps:get(cols, Opts, undefined))],
+    Cols = mk_cols(AllRows, maps:get(cols, Opts, undefined)),
     fmt_table(Header, Rows, Cols, Style, Opts).
 
 %%% internal
 
 -record(sep, {
-              left = []
-             , col_sep = []
-             , right = []
+              left = ""
+             , col_sep = ""
+             , right = ""
              , fill = " "
              }).
 
 -record(row, {
-              left = []
+              left = ""
              , col_sep = " "
-             , right = []
+             , right = ""
              }).
 
 -record(style, {
-                spacer = []
+                spacer = ""
                , first_line :: #sep{} | undefined
                , header = #row{} :: #row{}
                , header_sep :: #sep{} | undefined
@@ -75,62 +113,66 @@ format(Data, Opts) ->
                text :: iodata()
               , width :: non_neg_integer()  % calculated width of text
               }).
-mk_header([H | _] = Data, Opts) when is_map(H) ->
+
+mk_header([H | T] = Data, Opts) ->
+    Type = classify(H),
     {DoHeader, Keys} =
         case maps:get(header, Opts, first_row) of
             first_row ->
-                {true, maps:keys(H)};
+                {true, keys(Type, H)};
             Keys0 when is_list(Keys0) ->
                 {true, Keys0};
             none ->
-                {false, maps:keys(H)}
+                {false, keys(Type, H)}
         end,
-    {mk_header_row(DoHeader, [to_chardata(Key) || Key <- Keys], Opts),
-     maps_to_items(Data, Keys)};
-mk_header([[{_, _} | _] = H | _] = Data, Opts) -> % proplist
-    {DoHeader, Keys} =
-        case maps:get(header, Opts, first_row) of
-            first_row ->
-                {true, [Key || {Key, _Value} <- H]};
-            Keys0 when is_list(Keys0) ->
-                {true, Keys0};
-            none ->
-                {false, [Key || {Key, _Value} <- H]}
+    Items =
+        if Type == list; Type == tuple ->
+                T;
+           true ->
+                to_items(Type, Data, Keys)
         end,
-    {mk_header_row(DoHeader, [to_chardata(Key) || Key <- Keys], Opts),
-     maps_to_items([maps:from_list(X) || X <- Data], Keys)};
-mk_header([H | T], Opts) ->
-    {DoHeader, Keys} =
-        case maps:get(header, Opts, first_row) of
-            first_row ->
-                {true, H};
-            Keys0 when is_list(Keys0) ->
-                {true, Keys0};
-            none ->
-                {false, H}
-        end,
-    {mk_header_row(DoHeader, Keys, Opts),
-     T}.
+    {mk_header_row(DoHeader, [to_chardata(Key) || Key <- Keys], Opts), Items}.
+
+classify(H) when is_map(H) ->
+    map;
+classify([{_, _} | _]) ->
+    proplist;
+classify(H) when is_tuple(H) ->
+    tuple;
+classify(H) when is_list(H) ->
+    list.
+
+keys(map, H) ->
+    maps:keys(H);
+keys(proplist, H) ->
+    [Key || {Key, _Value} <- H];
+keys(tuple, H) ->
+    tuple_to_list(H);
+keys(list, H) ->
+    H.
+
+to_items(map, Data, Keys) ->
+    [lists:map(fun(Key) -> maps:get(Key, Map, <<"">>) end, Keys) ||
+        Map <- Data];
+to_items(proplist, Data, Keys) ->
+    to_items(map, [maps:from_list(PropList) || PropList <- Data], Keys).
+
 
 to_chardata(X) when is_atom(X) -> atom_to_binary(X);
 to_chardata(X) -> X.
 
 mk_header_row(true, Line, Opts) ->
     Row = mk_row(Line),
-    [fmt_cells(Cells, maps:get(header_fmt, Opts, default)) || Cells <- Row];
+    [fmt_cells(Cells, maps:get(header_fmt, Opts, undefined)) || Cells <- Row];
 mk_header_row(false, _, _) ->
     undefined.
-
-maps_to_items(Data, Keys) ->
-    [lists:map(fun(Key) -> maps:get(Key, Map, <<"">>) end, Keys) ||
-        Map <- Data].
 
 fmt_cells(Cells, Fmt) ->
     F = case Fmt of
             uppercase -> fun string:uppercase/1;
             lowercase -> fun string:lowercase/1;
             titlecase -> fun titlecase/1;
-            default -> fun(X) -> X end
+            undefined -> fun(X) -> X end
         end,
     [fmt_cell(Cell, F) || Cell <- Cells].
 
@@ -183,7 +225,7 @@ mk_cols(Rows, ColOpts) ->
     mk_cols(1, NumCols, Rows, ColOpts).
 
 mk_cols(ColN, NumCols, Rows, ColOpts) when ColN =< NumCols ->
-    ColOpt0 = get_col_opt(ColN, ColOpts),
+    ColOpt0 = maps:merge(default_col(), get_col_opt(ColN, ColOpts)),
     ColOpt1 =
         case maps:is_key(width, ColOpt0) of
             true ->
@@ -196,8 +238,11 @@ mk_cols(ColN, NumCols, Rows, ColOpts) when ColN =< NumCols ->
 mk_cols(_, _, _, _) ->
     [].
 
+default_col() ->
+    #{align => left}.
+
 get_col_opt(_, undefined) ->
-    #{align => left};
+    #{};
 get_col_opt(_, ColOpt) when is_map(ColOpt) ->
     ColOpt;
 get_col_opt(N, ColOpts) when is_list(ColOpts) ->
@@ -278,11 +323,16 @@ align(center, Text, Pad) ->
     Left = Pad div 2,
     [pad(Left), Text, pad(Pad - Left)].
 
-dup(Ch, N) ->
-    lists:duplicate(N, Ch).
+dup(Ch, N) when N > 0 ->
+    lists:duplicate(N, Ch);
+dup(_, _) ->
+    [].
 
-pad(N) ->
-    lists:duplicate(N, $\s).
+pad(N) when N > 0 ->
+    lists:duplicate(N, $\s);
+pad(_) ->
+    [].
+
 
 style(plain) -> plain();
 style(simple) -> simple();
@@ -360,26 +410,27 @@ ascii() ->
       }.
 
 mk_style(M) ->
-    #style{spacer = maps:get(spacer, M, undefined),
-           first_line = mk_sep0(maps:get(first_line, M, undefined)),
-           header = mk_row0(maps:get(header, M, undefined)),
-           header_sep = mk_sep0(maps:get(header_sep, M, undefined)),
-           row = mk_row0(maps:get(row, M, undefined)),
-           row_sep = mk_sep0(maps:get(row_sep, M, undefined)),
-           last_line = mk_sep0(maps:get(last_line, M, undefined))
+    D = #style{},
+    #style{spacer = maps:get(spacer, M, D#style.spacer),
+           first_line = mk_sep0(maps:get(first_line, M, D#style.first_line)),
+           header = mk_row0(maps:get(header, M)),
+           header_sep = mk_sep0(maps:get(header_sep, M, D#style.header_sep)),
+           row = mk_row0(maps:get(row, M)),
+           row_sep = mk_sep0(maps:get(row_sep, M, D#style.row_sep)),
+           last_line = mk_sep0(maps:get(last_line, M, D#style.last_line))
       }.
 
 mk_sep0(undefined) ->
     undefined;
 mk_sep0(M) ->
-    #sep{left = maps:get(left, M, undefined),
-         right = maps:get(right, M, undefined),
-         col_sep = maps:get(col_sep, M, undefined),
-         fill = maps:get(fill, M, undefined)}.
+    D = #sep{},
+    #sep{left = maps:get(left, M, D#sep.left),
+         right = maps:get(right, M, D#sep.right),
+         col_sep = maps:get(col_sep, M, D#sep.col_sep),
+         fill = maps:get(fill, M, D#sep.fill)}.
 
-mk_row0(undefined) ->
-    undefined;
 mk_row0(M) ->
-    #row{left = maps:get(left, M, undefined),
-         right = maps:get(right, M, undefined),
-         col_sep = maps:get(col_sep, M, undefined)}.
+    D = #row{},
+    #row{left = maps:get(left, M, D#row.left),
+         right = maps:get(right, M, D#row.right),
+         col_sep = maps:get(col_sep, M, D#row.col_sep)}.

@@ -204,3 +204,15 @@ no_header_map_test() ->
             #{header_fmt => titlecase,
               header => none,
               style => presto})).
+
+indent_test() ->
+    ?assertEqual(
+"  +------+-----+
+  | Year | Qty |
+  +------+-----+
+  | 2024 | 42  |
+  +------+-----+
+",
+        fmt([{"Year", "Qty"}, {2024, 42}],
+            #{style => ascii,
+              indent => "  "})).

@@ -82,7 +82,8 @@
         header => first_row | [key()] | none,
         header_fmt => lowercase | uppercase | titlecase,
         cols => col() | [col()],
-        style => style() | custom_style()
+        style => style() | custom_style(),
+        indent => unicode:chardata()
     }
 ) -> iodata().
 format(Data) ->
@@ -284,43 +285,46 @@ get_col_width(_, [], MaxWidth) ->
 fmt_table(Header, Rows, Cols, Style, Opts) ->
     #style{spacer = Spacer} = Style,
     SpWidth = string:length(Spacer) * 2,
+    Indent = maps:get(indent, Opts, ""),
     [
-        fmt_sep(Style#style.first_line, SpWidth, Cols),
+        fmt_sep(Style#style.first_line, SpWidth, Cols, Indent),
         if
             Header /= undefined ->
                 [
-                    fmt_row(Style#style.header, Spacer, Cols, Header, Opts),
-                    fmt_sep(Style#style.header_sep, SpWidth, Cols)
+                    fmt_row(Style#style.header, Spacer, Cols, Header, Opts, Indent),
+                    fmt_sep(Style#style.header_sep, SpWidth, Cols, Indent)
                 ];
             true ->
                 []
         end,
         lists:join(
-            fmt_sep(Style#style.row_sep, SpWidth, Cols),
+            fmt_sep(Style#style.row_sep, SpWidth, Cols, Indent),
             [
-                fmt_row(Style#style.row, Spacer, Cols, Row, Opts)
+                fmt_row(Style#style.row, Spacer, Cols, Row, Opts, Indent)
              || Row <- Rows
             ]
         ),
-        fmt_sep(Style#style.last_line, SpWidth, Cols)
+        fmt_sep(Style#style.last_line, SpWidth, Cols, Indent)
     ].
 
-fmt_sep(undefined, _, _) ->
+fmt_sep(undefined, _, _, _) ->
     [];
-fmt_sep(#sep{left = L, col_sep = CS, right = R, fill = F}, SpWidth, Cols) ->
+fmt_sep(#sep{left = L, col_sep = CS, right = R, fill = F}, SpWidth, Cols, Indent) ->
     [
+        Indent,
         L,
         lists:join(CS, [dup(F, SpWidth + maps:get(width, Col)) || Col <- Cols]),
         R,
         $\n
     ].
 
-fmt_row(_, _, _, undefined, _) ->
+fmt_row(_, _, _, undefined, _, _) ->
     [];
-fmt_row(#row{left = L, col_sep = CS, right = R}, Spacer, Cols, Row, Opts) ->
+fmt_row(#row{left = L, col_sep = CS, right = R}, Spacer, Cols, Row, Opts, Indent) ->
     lists:map(
         fun(Cells) ->
             [
+                Indent,
                 trim(
                     [
                         L,
